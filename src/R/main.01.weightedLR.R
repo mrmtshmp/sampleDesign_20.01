@@ -14,14 +14,37 @@ load(
   file = sprintf("%s/%s", dir.RData, fn.imported_data)
   )
 
-df.working_data <- df.imported_data.completed
+df.working_data <-
+  df.imported_data.completed
+
+df.working_data[,
+  var.exposure
+  ] <-
+  df.working_data[,
+    var.exposure.conti
+    ] <
+  var.cutoff[
+    var.cutoff$col_name == var.exposure.conti,
+    "cutoff"
+    ]
+
+df.working_data[, var.outcome] <-
+  df.working_data[,
+    var.cutoff[
+      var.cutoff$col_name == var.outcome.1,
+      "col_name"
+      ]
+    ] <=
+  var.cutoff[
+    var.cutoff$col_name == var.outcome.1,"cutoff"
+    ]
 
 
 # Propensity score model ----------
 
 fml.ps_model <-
   sprintf(
-    '%s ~ %s',
+    'as.factor(%s) ~ %s',
     var.exposure,
     paste(
       var.Psmodel,
@@ -29,23 +52,8 @@ fml.ps_model <-
       )
     )
 
-# Load source files of functions.
 
-df.working_data[
-  ,
-  var.exposure
-  ] <-
-  as.numeric(
-    df.working_data[
-      ,
-      grep(
-        var.exposure.conti,
-        colnames(df.working_data)
-        )
-      ] > var.cutoff[
-        var.cutoff$col_name == var.exposure.conti,"cutoff"
-        ]
-    )
+# Finishing coreating analysis data ---------------------------------------
 
 df.working_data_completed <-
   df.working_data[
@@ -67,27 +75,6 @@ sink(
 print(tabUnmatched, smd = TRUE)
 sink()
 
-for (
-  i in 1:nrow(df.working_data_completed)
-  ) {
-  if(
-    df.working_data_completed[
-      i, 
-      var.outcome.1] <= 
-      var.cutoff[
-        var.cutoff$col_name == var.exposure.conti,"cutoff"
-        ]
-    ) {
-    df.working_data_completed[ i, var.outcome.2] <-
-      df.working_data_completed[ i, var.outcome.1]
-      } else {
-        df.working_data_completed[ i, var.outcome.1]  <-
-          var.cutoff[
-            var.cutoff$col_name == var.exposure.conti,"cutoff"
-            ]
-        }
-  }
-
 
 # Propensity score model ---------------
 propensityScoreModel <-
@@ -97,22 +84,6 @@ propensityScoreModel <-
     data    = df.working_data_completed,
     na.action = na.exclude
     )
-
-# propensityScoreModel <-
-#   Zelig::zelig(
-#     gsub("as\\.factor","as\\.numeric",fml.ps_model),
-#     model = "relogit",
-#     data = df.working_data_completed %>% data.frame(),
-#     na.action=na.exclude
-#     )
-
-# propensityScoreModel <-
-#   brglm::brglm(
-#     as.formula(fml.ps_model),
-#     family  = binomial(link = "logit"),
-#     data    = df.working_data_completed,
-#     na.action = na.exclude
-#     )
 
 df.working_data_completed.propensityScores <-
   df.working_data_completed %>%
@@ -157,16 +128,16 @@ res.roc.propensity_score <- roc(
 df.working_data_completed.propensityScores_IPW$y_for_dots <-
   (
     as.numeric(
-      df.working_data_completed.propensityScores_IPW[,var.outcome]
-      )+1
-    )*5
+      df.working_data_completed.propensityScores_IPW[,var.exposure]
+      )
+    )
 
 df.working_data_completed.propensityScores_IPW$var.exposure <-
   df.working_data_completed.propensityScores_IPW[,var.exposure]
 df.working_data_completed.propensityScores_IPW$factor.var.exposure <-
   factor(
     df.working_data_completed.propensityScores_IPW[,var.exposure],
-    c(0,1),
+    levels = c(FALSE,TRUE),
     unlist(
       strsplit(
         gsub("^\\{(.+)\\}$","\\1",var.label[var.label$col_name==var.exposure,"var.label"]),
@@ -226,7 +197,7 @@ plot(
       x=propensity_score,
       color=factor.var.exposure
       ),
-    size=1
+    size=3
   ) +
   theme_bw()
 )
@@ -238,14 +209,14 @@ ggdata.propensityScores +
       ),
     alpha=0.5,
     position="identity"
-  ) +
+    ) +
   geom_point(
     aes(
-      y=var.exposure,
+      y=y_for_dots,
       x=propensity_score,
       color=factor.var.exposure
       ),
-    size=1
+    size=3
     ) +
   theme_bw()
 
@@ -378,7 +349,7 @@ ggplot(
   coord_flip() +
   theme_bw() + theme(legend.key = element_blank())
 ggplot(
-  data = dataPlotMelt,
+  data = dataPlotMelt[dataPlotMelt$variable %in% var.Psmodel,],
   mapping = aes(x = col_label, y = SMD, group = Method, color = Method)
   ) +
   geom_line() +
@@ -401,7 +372,7 @@ dev.off()
 #'   correct standard errors for relative risk regression models.
 
 fml.gml <- sprintf(
-  "%s=='1' ~ %s",
+  "as.factor(%s) ~ %s",
   var.outcome,
   var.exposure
   )
@@ -413,28 +384,13 @@ res.glmWeighted <-
     design  = res.svydesign.w_att
     )
 
-res.glmOrd <-
-  glm(
-    formula = fml.gml,
-    family  = binomial(link = "logit"),                  
-    #design    = res.svydesign.w_att
-    data=LDLT_Comp_completed.propensityScores_IPW
-  )
-
-res.glmOrd_weighted <-
-  glm(
-    formula = fml.gml,
-    family  = quasibinomial(link = "logit"),                  
-    #design    = res.svydesign.w_att
-    data=LDLT_Comp_completed.propensityScores_IPW,
-    weights = w_att
-  )
-
-
 summary.res.glmWeighted <-
   summary(res.glmWeighted)
 
+sink("output/summary.res.glmWeighted.txt")
+
+print(summary.res.glmWeighted)
 print(exp(summary.res.glmWeighted$coefficients[,"Estimate"]))
 print(exp(confint(res.glmWeighted)))
-
+sink()
 #```

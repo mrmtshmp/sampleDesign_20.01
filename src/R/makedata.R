@@ -78,7 +78,8 @@ df.imported_data.completed <-
     ) %>%
   data.frame()
 
-for(
+if(nrow(var.trans)>0){
+  for(
   i in 1:length(var.trans$col_name)
   ) 
   df.imported_data.completed[
@@ -91,8 +92,7 @@ for(
         ) %>%
         eval()
       )
-  
-
+  }
 
 save(
   list = ls(pattern = "^var\\."),
@@ -100,6 +100,7 @@ save(
   df.imported_data.completed, 
   file = sprintf("%s/%s",dir.RData,fn.imported_data)
   )
+
 quartz(
   family = 'Arial',
   type = 'pdf',
